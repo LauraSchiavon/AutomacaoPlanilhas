@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+"""
+Test script to simulate conditional filling based on Column M.
+It reads the actual Column M from the Excel file.
+If 'TESTE', it processes the row.
+If 'VALIDADO' or 'DESCARTADO' or anything else, it skips.
+"""
+
+import sys, os, requests
+from openpyxl import load_workbook
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from fill_creative_tests import extract_ad_name_from_campaign, build_col_a_label
+
+TOKEN = "EAAWDHozjODgBQZBEiBDPWYCCc5AmZA9FTkAh6ICQ3tMju4hCZAWCphJZCY9xsKZBIFq8PCefiiJnZA1MWVitYDNlIU86LOZAYkH91qPVx5vKuYNGb9xZCWGxcyAgp8qetdQgZB9ly3QyMz6wSyzck65iZCkWc8XAAlsAmG1nZB6z5quMXeDNfb5WMgE55N3yyGsUpyVsMEekMIYIl5nW0xH7jg2WUzT3ysBGEnZCrXVdQCTVc5iD6kqfuC5fATZAHqHXyfNiRENJRDHjulEgLszhvKegV7uKYfEBWBlrJeXZBtnGgZD"
+ACCOUNT_ID = "act_542987171356461"
+EXCEL_FILE = r"C:\Preencher planilha\FB - LOTTO V7.xlsx"
+MAIN_SHEET = "032026"
+DATA_START_ROW = 4
+
+DATE_START = "2026-03-01"
+DATE_END = "2026-03-03"
+USD_TO_BRL = 5.2797
+
+print("Buscando Catálogo de Campanhas...")
+url = f"https://graph.facebook.com/v19.0/{ACCOUNT_ID}/campaigns"
+all_campaigns = []
+params = {"access_token": TOKEN, "fields": "id,name,effective_status", "limit": 500}
+while url:
+    r = requests.get(url, params=params)
+    data = r.json()
+    page = data.get("data", [])
+    if not page: break
+    all_campaigns.extend(page)
+    url = data.get("paging", {}).get("next")
+    params = {}
+
+ad_to_campaign = {}
+for camp in all_campaigns:
+    name = camp.get("name", "")
+    c_id = camp.get("id")
+    if name:
+        ext = extract_ad_name_from_campaign(name)
+        if ext:
+            key = ext.strip().lower()
+            if key not in ad_to_campaign:
+                ad_to_campaign[key] = {"id": c_id, "name": name}
+
+print("Buscando Insights Financeiros...")
+insights_url = f"https://graph.facebook.com/v19.0/{ACCOUNT_ID}/insights"
+params = {
+    'access_token': TOKEN,
+    'fields': 'campaign_id,impressions,cpc,cpm,ctr,spend,actions,video_p75_watched_actions',
+    'level': 'campaign',
+    'date_start': DATE_START,
+    'date_end': DATE_END,
+    'limit': 100
+}
+finance_map = {}
+while insights_url:
+    r = requests.get(insights_url, params=params)
+    data = r.json()
+    page = data.get('data', [])
+    if not page: break
+    for row in page:
+        c_id = row.get("campaign_id")
+        imps = float(row.get("impressions", 0))
+        
+        actions = row.get('actions', [])
+        video_3s_views = 0
+        for act in actions:
+            if act.get('action_type') == 'video_view':
+                video_3s_views = float(act.get('value', 0))
+                break
+                
+        video_p75_actions = row.get('video_p75_watched_actions', [])
+        p75 = 0
+        if video_p75_actions:
+            p75 = float(video_p75_actions[0].get('value', 0))
+            
+        hook_rate = (video_3s_views / imps * 100) if imps > 0 else 0
+        body_rate = (p75 / imps * 100) if imps > 0 else 0
+        
+        finance_map[c_id] = {
+            "spend": float(row.get("spend", 0.0)),
+            "cpm": float(row.get("cpm", 0.0)),
+            "cpc": float(row.get("cpc", 0.0)),
+            "ctr": float(row.get("ctr", 0.0)),
+            "hook_rate": hook_rate,
+            "body_rate": body_rate
+        }
+        
+    insights_url = data.get("paging", {}).get("next")
+    params = {}
+
+print("Lendo a Planilha...")
+wb = load_workbook(EXCEL_FILE, data_only=True)
+ws = wb[MAIN_SHEET]
+
+print("\n=== RESULTADO DA SIMULAÇÃO (CONDICIONAL COL M) ===")
+print(f"| {'LINHA':<5} | {'M (STATUS)':<12} | {'AÇÃO':<14} | {'A (TC)':<16} | {'B (Ad)':<14} | {'E (Hook)':<8} | {'F (Hold)':<8} | {'G (CPM)':<8} | {'H (CTR)':<8} | {'I (CPC)':<8} | {'J (Gasto)':<8} |")
+print("-" * 135)
+
+for row_idx in range(DATA_START_ROW, ws.max_row + 1):
+    ad_cell = ws.cell(row=row_idx, column=2).value
+    if not ad_cell or str(ad_cell).strip() == "":
+        continue
+        
+    status_cell = ws.cell(row=row_idx, column=13).value
+    current_status = str(status_cell).strip().upper() if status_cell else "(VAZIO)"
+    
+    # Check conditional logic
+    # If it is NOT "TESTE", we skip.
+    # To make the test visible if the user hasn't typed anything yet,
+    # let's artificially force a few rows to "TESTE" and a few to "VALIDADO" for demonstration if the real file is empty.
+    
+    action_taken = ""
+    col_a = col_e = col_f = col_g = col_h = col_i = col_j = "-"
+    
+    if current_status == "(VAZIO)":
+        # Force a simulation value just for display purposes
+        if row_idx % 3 == 0:
+            current_status = "VALIDADO (simulado)"
+        elif row_idx % 4 == 0:
+            current_status = "DESCARTADO (simul)"
+        else:
+            current_status = "TESTE (simulado)"
+            
+    if "TESTE" in current_status:
+        action_taken = "✅ ATUALIZAR"
+        
+        search_term = str(ad_cell).strip().lower()
+        matched_info = None
+
+        if search_term in ad_to_campaign:
+            matched_info = ad_to_campaign[search_term]
+        else:
+            for key, info in ad_to_campaign.items():
+                if search_term in key or key in search_term:
+                    matched_info = info
+                    break
+                    
+        if matched_info:
+            c_id = matched_info["id"]
+            c_name = matched_info["name"]
+            
+            col_a = build_col_a_label(c_name)
+            
+            fin = finance_map.get(c_id, {
+                "spend": 0.0, "cpm": 0.0, "cpc": 0.0,
+                "ctr": 0.0, "hook_rate": 0.0, "body_rate": 0.0
+            })
+            
+            cpc_brl = fin["cpc"] * USD_TO_BRL
+            cpm_brl = fin["cpm"] * USD_TO_BRL
+            spend_brl = fin["spend"] * USD_TO_BRL
+            
+            col_e = f"{fin['hook_rate']:.2f}%"
+            col_f = f"{fin['body_rate']:.2f}%"
+            col_g = f"R${cpm_brl:.2f}"
+            col_h = f"{fin['ctr']:.2f}%"
+            col_i = f"R${cpc_brl:.2f}"
+            col_j = f"R${spend_brl:.2f}"
+        else:
+            action_taken = "❌ NÃO ENCONTRADO"
+    else:
+        action_taken = "⏭️ PULAR LINHA"
+
+    print(f"| L{row_idx:03d} | {current_status:<12} | {action_taken:<14} | {col_a:<16} | {str(ad_cell):<14} | {col_e:<8} | {col_f:<8} | {col_g:<8} | {col_h:<8} | {col_i:<8} | {col_j:<8} |")
+
+print("-" * 135)
+print("Fim da simulação.")

@@ -1,0 +1,7 @@
+from facebook_redtrack_importer_v2 import FacebookAdsAPI
+
+fb_token = "EAAWDHozjODgBQ0dy2cte5PZBfP4u24A1J6k7GZCzkXzqXX6HIW126Cku9BL93JK0LQLExrwnsN2ZAsJBHelA8POf2gvLAiPL7GfSqGCIZBPSZChqSfqAOwUTW6Mcn6c0y4igNxerfPRopu8CncMJW1MfJVmJ7yh55NEKZAAXuuhipBnsrH5bWL1uXcx8vpL2Glj9gWaeFZCrhHHerli1ckNTPqMrdajtUBlBrTsNxl1othr7SRrbm0XVxYEeGHT5BlkXeXZABZBWOeJsJ0oedqlolgB7AS5B5qE6CzGtoGQZDZD"
+api = FacebookAdsAPI(fb_token)
+bms = api.get_business_managers()
+print("BM Count:", len(bms))
+if bms: print(bms[0])
